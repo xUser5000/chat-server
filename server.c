@@ -9,13 +9,16 @@
 
 #define PORT "3000"
 #define BUFFER_SIZE 1024
+#define MAX_CLIENTS 512
 
-void *handle(void *args);
-
-struct handle_args_t {
-    int client_fd;
-    int client_id;
+struct client_t {
+    int socket_fd;
+    int id;
 };
+
+void *handle_client(void *args);
+
+struct client_t *clients[MAX_CLIENTS];
 
 int main(void) {
 
@@ -73,7 +76,7 @@ int main(void) {
 
     printf("server: listening to connections on port %s\n", PORT);
 
-    int next_client = 1;
+    int next_client_id = 1;
 
     // the main loop of the web server
     while (1) {
@@ -83,32 +86,42 @@ int main(void) {
             continue;
         }
 
-        int client_id = next_client++;
+        int idx = -1;
+        for (int c = 0; c < MAX_CLIENTS; c++) {
+            if (clients[c] == NULL) {
+                idx = c;
+            }
+        }
 
-        printf("server: client %d connected\n", client_id);
+        if (idx == -1) {
+            fprintf(stderr, "server: max no. clients reached\n");
+            close(client_fd);
+            continue;
+        }
+
+        struct client_t *curr_client = (struct client_t *) malloc(sizeof(struct client_t));
+        curr_client->id = next_client_id++;
+        curr_client->socket_fd = client_fd;
+        clients[idx] = curr_client;
+
+        printf("server: client %d connected\n", curr_client->id);
 
         pthread_attr_t attr;
         pthread_attr_init(&attr);
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
-        struct handle_args_t *args = (struct handle_args_t *) malloc(sizeof(struct handle_args_t));
-        args->client_id = client_id;
-        args->client_fd = client_fd;
-
         pthread_t handler;
-        pthread_create(&handler, &attr, handle, args);
+        pthread_create(&handler, &attr, handle_client, curr_client);
     }
 
     return 0;
 }
- 
 
-void *handle(void *args) {
-    struct handle_args_t *arg = (struct handle_args_t *) args;
-    int client_id = arg->client_id;
-    int client_fd = arg->client_fd;
 
-    free(args);
+void *handle_client(void *args) {
+    struct client_t *client = (struct client_t *) args;
+    int client_id = client->id;
+    int client_fd = client->socket_fd;
 
     while (1) {
         char buff[BUFFER_SIZE];
@@ -125,9 +138,21 @@ void *handle(void *args) {
             break;
         }
 
-        send(client_fd, buff, strlen(buff), 0);
+        for (int i = 0; i < MAX_CLIENTS; i++) {
+            if (clients[i] != NULL) {
+                send(clients[i]->socket_fd, buff, strlen(buff), 0);
+            }
+        }
+
         memset(buff, 0, BUFFER_SIZE);
     }
 
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i]->id == client_id) {
+            clients[i] = NULL;
+        }
+    }
+
+    free(client);
     return NULL;
 }

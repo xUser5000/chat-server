@@ -16,24 +16,70 @@ struct client_t {
     int id;
 };
 
+struct client_t *clients[MAX_CLIENTS];
+pthread_mutex_t clients_guard;
+
+int create_server(char *port);
+
 void *handle_client(void *args);
 
-struct client_t *clients[MAX_CLIENTS];
-
 int main(void) {
-
-    int rc, sock_fd;
-    struct addrinfo hints, *server_info, *i;
+    int server_sock_fd = create_server(PORT);
+    printf("server: listening to connections on port %s\n", PORT);
 
     struct sockaddr client_addr;
     socklen_t client_addrlen;
+    int next_client_id = 1;
+    while (1) {
+        int client_fd = accept(server_sock_fd, &client_addr, &client_addrlen);
+        if (client_fd == -1) {
+            fprintf(stderr, "server: %s\n", strerror(errno));
+            continue;
+        }
+
+        pthread_mutex_lock(&clients_guard);
+        int idx = -1;
+        for (int c = 0; c < MAX_CLIENTS; c++) {
+            if (clients[c] == NULL) {
+                idx = c;
+            }
+        }
+
+        if (idx == -1) {
+            fprintf(stderr, "server: max no. clients reached\n");
+            close(client_fd);
+            pthread_mutex_unlock(&clients_guard);
+            continue;
+        }
+
+        struct client_t *curr_client = (struct client_t *) malloc(sizeof(struct client_t));
+        curr_client->id = next_client_id++;
+        curr_client->socket_fd = client_fd;
+        clients[idx] = curr_client;
+        pthread_mutex_unlock(&clients_guard);
+
+        printf("server: client %d connected\n", curr_client->id);
+
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+        pthread_t handler;
+        pthread_create(&handler, &attr, handle_client, curr_client);
+    }
+
+}
+
+int create_server(char *port) {
+    int rc, sock_fd;
+    struct addrinfo hints, *server_info, *i;
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
 
-    if ((rc = getaddrinfo(NULL, PORT, &hints, &server_info)) != 0) {
+    if ((rc = getaddrinfo(NULL, port, &hints, &server_info)) != 0) {
         fprintf(stderr, "server: %s\n", gai_strerror(rc));
         exit(1);
     }
@@ -74,47 +120,7 @@ int main(void) {
         exit(1);
     }
 
-    printf("server: listening to connections on port %s\n", PORT);
-
-    int next_client_id = 1;
-
-    // the main loop of the web server
-    while (1) {
-        int client_fd = accept(sock_fd, &client_addr, &client_addrlen);
-        if (client_fd == -1) {
-            fprintf(stderr, "server: %s\n", strerror(errno));
-            continue;
-        }
-
-        int idx = -1;
-        for (int c = 0; c < MAX_CLIENTS; c++) {
-            if (clients[c] == NULL) {
-                idx = c;
-            }
-        }
-
-        if (idx == -1) {
-            fprintf(stderr, "server: max no. clients reached\n");
-            close(client_fd);
-            continue;
-        }
-
-        struct client_t *curr_client = (struct client_t *) malloc(sizeof(struct client_t));
-        curr_client->id = next_client_id++;
-        curr_client->socket_fd = client_fd;
-        clients[idx] = curr_client;
-
-        printf("server: client %d connected\n", curr_client->id);
-
-        pthread_attr_t attr;
-        pthread_attr_init(&attr);
-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-
-        pthread_t handler;
-        pthread_create(&handler, &attr, handle_client, curr_client);
-    }
-
-    return 0;
+    return sock_fd;
 }
 
 
@@ -138,20 +144,24 @@ void *handle_client(void *args) {
             break;
         }
 
+        pthread_mutex_lock(&clients_guard);
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (clients[i] != NULL && clients[i]->id != client_id) {
                 send(clients[i]->socket_fd, buff, strlen(buff), 0);
             }
         }
+        pthread_mutex_unlock(&clients_guard);
 
         memset(buff, 0, BUFFER_SIZE);
     }
 
+    pthread_mutex_lock(&clients_guard);
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (clients[i] != NULL && clients[i]->id == client_id) {
             clients[i] = NULL;
         }
     }
+    pthread_mutex_unlock(&clients_guard);
 
     free(client);
     return NULL;

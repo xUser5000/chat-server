@@ -8,7 +8,7 @@
 #include <pthread.h>
 
 #define PORT "3000"
-#define BUFFER_SIZE 1024
+#define MSG_SIZE 1024
 #define MAX_CLIENTS 512
 
 struct client_t {
@@ -84,7 +84,7 @@ int create_server(char *port) {
         exit(1);
     }
 
-    // loop through all candidate addresses and bind to the first we can
+    /* loop through all candidate addresses and bind to the first available one */
     for (i = server_info; i != NULL; i = i->ai_next) {
         sock_fd = socket(server_info->ai_family, server_info->ai_socktype, 0);
 
@@ -123,14 +123,14 @@ int create_server(char *port) {
     return sock_fd;
 }
 
-
 void *handle_client(void *args) {
     struct client_t *client = (struct client_t *) args;
 
+    char prompt[20];
+    char msg[MSG_SIZE];
     while (1) {
-        char buff[BUFFER_SIZE];
 
-        ssize_t ret = recv(client->socket_fd, &buff, BUFFER_SIZE, 0);
+        ssize_t ret = recv(client->socket_fd, &msg, MSG_SIZE, 0);
         if (ret == -1) {
             fprintf(stderr, "server: failed to receive buffer from client %d\n", client->id);
             close(client->socket_fd);
@@ -148,12 +148,14 @@ void *handle_client(void *args) {
         for(struct client_t **ptr = clients; ptr < clients + MAX_CLIENTS; ptr++)
         {
             if (*ptr != NULL && (*ptr)->id != client->id) {
-                send((*ptr)->socket_fd, buff, strlen(buff), 0);
+                sprintf(prompt, "client %d> ", client->id);
+                send((*ptr)->socket_fd, prompt, strlen(prompt), 0);
+                send((*ptr)->socket_fd, msg, strlen(msg), 0);
             }
         }
         pthread_mutex_unlock(&clients_guard);
 
-        memset(buff, 0, BUFFER_SIZE);
+        memset(msg, 0, MSG_SIZE);
     }
 
     /* free the client's resources */

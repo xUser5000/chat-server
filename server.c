@@ -87,17 +87,21 @@ int main(void) {
 
         printf("server: client %d connected\n", client_id);
 
-        pthread_t handler;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
         struct handle_args_t *args = (struct handle_args_t *) malloc(sizeof(struct handle_args_t));
         args->client_id = client_id;
         args->client_fd = client_fd;
-        pthread_create(&handler, NULL, handle, args);
 
+        pthread_t handler;
+        pthread_create(&handler, &attr, handle, args);
     }
 
     return 0;
 }
-
+ 
 
 void *handle(void *args) {
     struct handle_args_t *arg = (struct handle_args_t *) args;

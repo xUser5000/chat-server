@@ -148,7 +148,7 @@ void *handle_client(void *args) {
     }
 
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clients[i]->id == client_id) {
+        if (clients[i] != NULL && clients[i]->id == client_id) {
             clients[i] = NULL;
         }
     }

@@ -5,9 +5,17 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <pthread.h>
 
 #define PORT "3000"
 #define BUFFER_SIZE 1024
+
+void *handle(void *args);
+
+struct handle_args_t {
+    int client_fd;
+    int client_id;
+};
 
 int main(void) {
 
@@ -58,7 +66,6 @@ int main(void) {
         exit(1);
     }
 
-
     if (listen(sock_fd, SOMAXCONN) == -1) {
         fprintf(stderr, "server: %s\n", strerror(errno));
         exit(1);
@@ -80,26 +87,43 @@ int main(void) {
 
         printf("server: client %d connected\n", client_id);
 
-        while (1) {
-            char buff[BUFFER_SIZE];
-            ssize_t ret = recv(client_fd, &buff, BUFFER_SIZE, 0);
-            if (ret == -1) {
-                fprintf(stderr, "server: failed to receive buffer from client %d\n", client_id);
-                close(client_fd);
-                break;
-            }
-
-            if (ret == 0) {
-                close(client_fd);
-                printf("server: client %d disconnected\n", client_id);
-                break;
-            }
-
-            send(client_fd, buff, strlen(buff), 0);
-            memset(buff, 0, BUFFER_SIZE);
-        }
+        pthread_t handler;
+        struct handle_args_t *args = (struct handle_args_t *) malloc(sizeof(struct handle_args_t));
+        args->client_id = client_id;
+        args->client_fd = client_fd;
+        pthread_create(&handler, NULL, handle, args);
 
     }
 
     return 0;
+}
+
+
+void *handle(void *args) {
+    struct handle_args_t *arg = (struct handle_args_t *) args;
+    int client_id = arg->client_id;
+    int client_fd = arg->client_fd;
+
+    free(args);
+
+    while (1) {
+        char buff[BUFFER_SIZE];
+        ssize_t ret = recv(client_fd, &buff, BUFFER_SIZE, 0);
+        if (ret == -1) {
+            fprintf(stderr, "server: failed to receive buffer from client %d\n", client_id);
+            close(client_fd);
+            break;
+        }
+
+        if (ret == 0) {
+            printf("server: client %d disconnected\n", client_id);
+            close(client_fd);
+            break;
+        }
+
+        send(client_fd, buff, strlen(buff), 0);
+        memset(buff, 0, BUFFER_SIZE);
+    }
+
+    return NULL;
 }

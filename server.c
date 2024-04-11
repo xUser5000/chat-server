@@ -46,9 +46,9 @@ int main(void) {
         }
 
         if (idx == -1) {
-            fprintf(stderr, "server: max no. clients reached\n");
-            close(client_fd);
             pthread_mutex_unlock(&clients_guard);
+            close(client_fd);
+            fprintf(stderr, "server: max no. clients reached\n");
             continue;
         }
 
@@ -126,28 +126,29 @@ int create_server(char *port) {
 
 void *handle_client(void *args) {
     struct client_t *client = (struct client_t *) args;
-    int client_id = client->id;
-    int client_fd = client->socket_fd;
 
     while (1) {
         char buff[BUFFER_SIZE];
-        ssize_t ret = recv(client_fd, &buff, BUFFER_SIZE, 0);
+
+        ssize_t ret = recv(client->socket_fd, &buff, BUFFER_SIZE, 0);
         if (ret == -1) {
-            fprintf(stderr, "server: failed to receive buffer from client %d\n", client_id);
-            close(client_fd);
+            fprintf(stderr, "server: failed to receive buffer from client %d\n", client->id);
+            close(client->socket_fd);
             break;
         }
 
         if (ret == 0) {
-            printf("server: client %d disconnected\n", client_id);
-            close(client_fd);
+            printf("server: client %d disconnected\n", client->id);
+            close(client->socket_fd);
             break;
         }
 
+        /* send to all connected clients except the original sender */
         pthread_mutex_lock(&clients_guard);
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (clients[i] != NULL && clients[i]->id != client_id) {
-                send(clients[i]->socket_fd, buff, strlen(buff), 0);
+        for(struct client_t **ptr = clients; ptr < clients + MAX_CLIENTS; ptr++)
+        {
+            if (*ptr != NULL && (*ptr)->id != client->id) {
+                send((*ptr)->socket_fd, buff, strlen(buff), 0);
             }
         }
         pthread_mutex_unlock(&clients_guard);
@@ -155,14 +156,16 @@ void *handle_client(void *args) {
         memset(buff, 0, BUFFER_SIZE);
     }
 
+    /* free the client's resources */
     pthread_mutex_lock(&clients_guard);
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clients[i] != NULL && clients[i]->id == client_id) {
-            clients[i] = NULL;
+    for(struct client_t **ptr = clients; ptr < clients + MAX_CLIENTS; ptr++)
+    {
+        if (*ptr != NULL && (*ptr)->id == client->id) {
+            *ptr = NULL;
+            break;
         }
     }
     pthread_mutex_unlock(&clients_guard);
-
     free(client);
     return NULL;
 }

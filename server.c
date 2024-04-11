@@ -139,7 +139,7 @@ void *handle_client(void *args) {
         }
 
         for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (clients[i] != NULL) {
+            if (clients[i] != NULL && clients[i]->id != client_id) {
                 send(clients[i]->socket_fd, buff, strlen(buff), 0);
             }
         }

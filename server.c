@@ -7,7 +7,6 @@
 #include <netdb.h>
 #include <pthread.h>
 
-#define PORT "3000"
 #define MSG_SIZE 1024
 #define MAX_CLIENTS 512
 
@@ -23,9 +22,16 @@ int create_server(char *port);
 
 void *handle_client(void *args);
 
-int main(void) {
-    int server_sock_fd = create_server(PORT);
-    printf("server: listening to connections on port %s\n", PORT);
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "usage: server <port>\n");
+        exit(1);
+    }
+
+    char *port = argv[1];
+
+    int server_sock_fd = create_server(port);
+    printf("server: listening to connections on port %s\n", port);
 
     struct sockaddr client_addr;
     socklen_t client_addrlen;
